@@ -1,0 +1,114 @@
+---
+title: "Tooth Growth Investigation"
+author: "Meenakshi Parameshwaran"
+date: "25 January 2016"
+output: pdf_document
+---
+
+## Introduction
+
+In this investigation I use the `ToothGrowth` dataset from the `datasets` package to explore the data and compare tooth growth by supplement type and dose.
+
+For more information on the `ToothGrowth` dataset, see here: https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/ToothGrowth.html
+
+## Methods
+
+First I load the data.
+
+```{r load data}
+library(datasets)
+tooth <- ToothGrowth
+```
+
+Next I perform some basic exploratory analyses. I see there are 60 rows of three variables. I also show a simple summary of the data. There are two levels of the supplement factor: OJ (orange juice) and VC (ascorbic acid). I assume there are 60 guinea pigs. The len variable measures the length of odontoblasts (capturing tooth growth).
+
+```{r explore}
+
+# look at dimensions and structure of data
+dim(tooth)
+str(tooth)
+
+# summarise the data
+summary(tooth)
+```
+
+The plot below shows mean length of tooth by supplement type and dose per day.
+
+```{r plot, warning=FALSE, message=FALSE}
+library(dplyr) # to wrangle and reshape the data
+
+toothnew <- tooth %>% group_by(supp, dose) %>% mutate(meanlength = mean(len))
+
+toothnew$supp_dose <- paste(toothnew$supp, toothnew$dose, sep = "_")
+toothnew$supp_dose <- as.factor(toothnew$supp_dose)
+levels(toothnew$supp_dose) <- c("Orange Juice 0.5mg", "Orange Juice 1mg", "Orange Juice 2mg", "Ascorbic Acid 0.5mg", "Ascorbic Acid 1mg", "Ascorbic Acid 2mg")
+
+library(ggplot2) # for plotting
+library(stringr) # for label wrapping
+ggplot(data = toothnew, 
+       aes(x = supp_dose, y = meanlength, fill = supp_dose)) +
+    geom_bar(stat="identity") +
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+    guides(fill=FALSE) +
+    xlab("Supplement and Dose") +
+    ylab("Mean length of odontoblasts") +
+    ggtitle("Mean effects of Vitamin C on Tooth Growth in Guinea Pigs \n by Dose and Supplment Type")
+```
+
+
+## Results
+
+Now I compare the mean length of tooth growth by supplement type and dose. I also calculate confidence intervals for each mean length to see which supplement types and doses have mean lengths that are different from 0. 
+
+```{r analysis}
+library(dplyr) # to wrangle and reshape the data
+
+# get means and standard deviations by supplement type and dose
+tooth_analysis <- toothnew %>% group_by(supp_dose) %>% summarise(n = n(), meanlength = mean(len), sdlength = sd(len))
+
+# calculate standard errors
+tooth_analysis$se <- tooth_analysis$sdlength / sqrt(tooth_analysis$n)
+
+# calculate 95% confidence intervals
+tooth_analysis$ci <- qt(p = 0.975, df = 10-1, lower.tail = FALSE) * tooth_analysis$se
+
+# calculate lower and upper bounds by adding CIs to the mean
+tooth_analysis$lower_95_ci <- tooth_analysis$meanlength + tooth_analysis$ci
+tooth_analysis$upper_95_ci <- tooth_analysis$meanlength - tooth_analysis$ci
+```
+
+The table below shows the mean growth and 95% confidence intervals for each combination of supplement and dose, rounded to two decimal places.
+
+```{r table}
+library(knitr)
+mytable <- tooth_analysis[,c(1,3,7,8)] # select just the columns I want
+kable(x = mytable, digits = 2, col.names = c("Supplement Type and Dose", "Mean Tooth Growth", "Lower 95% CI", "Upper 95% CI"))
+```
+
+
+The plot below shows the mean growth and 95% confidence intervals as error bars. When the error bars do not overlap between bars, it means that the difference in means has only a 5% likelihood of being due to chance i.e. there is a 95% likelihood that there is a real difference in the effects of that dose and supplement type on tooth growth in guinea pigs.
+
+```{r plot with cis}
+library(ggplot2) # for plotting
+library(stringr) # for label wrapping
+ggplot(data = tooth_analysis, 
+       aes(x = supp_dose, y = meanlength, fill = supp_dose)) +
+    geom_bar(stat="identity") +
+     geom_errorbar(aes(ymin = lower_95_ci, ymax = upper_95_ci),
+                  size=.3, width=.2, position=position_dodge(.9)) +
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 15)) +
+    guides(fill=FALSE) +
+    xlab("Supplement and Dose") +
+    ylab("Mean length of odontoblasts") +
+    ggtitle("Mean effects of Vitamin C on Tooth Growth in Guinea Pigs \n by Dose and Supplment Type (with 95% confidence intervals)")
+```
+
+
+## Conclusion
+
+
+All three Ascorbic Acid bars have CIs that do not overlap, meaning that we can reject the null hypothesis of there being no difference between the mean effects of these three supplement-dose combinations on tooth growth in guinea pigs. In contrast, there is no difference in the means between Orange Juice doses of 1mg/day compared to 2mg/day. However, there is a difference in the mean growth for the Orange Juice dose of 0.5mg/day -  the growth here is significantly lower than for doses of Orange Juice of 1mg/day and 2mg/day.
+
+## Assumptions
+
+I have assumed an alpha rate of 0.05 i.e. a 5% chance of a false positive. I have also assumed the tooth growth length information follows a normal distribution that can be approximated by the T-distribution for smaller sample sizes. I haven't bootstrapped the standard error estimates but this could be done in future to make them more reliable. Additionally, although I have carried out multiple testing here, I have not adjusted for the family-wise error rate nor the false discovery rate. Finally, I have assumed that each of the 60 rows in the original data represented one guinea pig and that each guinea pig only experienced one treatment, which was allocated at random (rather than, for example, guinea pigs with better tooth growth being nonrandomly allocated to a certain treatment).
